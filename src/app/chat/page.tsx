@@ -26,7 +26,7 @@ export default function ChatPage() {
     if (!input.trim() || loading) return;
 
     const newMessages: Message[] = [...messages, { role: "user", content: input }];
-    setMessages(newMessages);
+    setMessages([...newMessages, { role: "assistant", content: "" }]);
     setInput("");
     setLoading(true);
 
@@ -36,14 +36,28 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newMessages }),
       });
-      const data = await res.json();
 
-      if (res.ok) {
-        setMessages([...newMessages, { role: "assistant", content: data.reply }]);
-      } else {
+      if (!res.ok || !res.body) {
         setMessages([
           ...newMessages,
           { role: "assistant", content: "Something went wrong. Try again?" },
+        ]);
+        setLoading(false);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        assistantText += decoder.decode(value, { stream: true });
+        setMessages([
+          ...newMessages,
+          { role: "assistant", content: assistantText },
         ]);
       }
     } catch {
@@ -71,23 +85,22 @@ export default function ChatPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-y-auto px-6 py-8">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-              m.role === "user"
-                ? "ml-auto bg-zinc-900 text-white dark:bg-white dark:text-black"
-                : "mr-auto bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-            }`}
-          >
-            {m.content}
-          </div>
-        ))}
-        {loading && (
-          <div className="mr-auto rounded-2xl bg-zinc-200 px-4 py-3 text-sm text-zinc-500 dark:bg-zinc-800">
-            Mentora is thinking...
-          </div>
-        )}
+        {messages.map((m, i) => {
+          const isStreamingEmpty =
+            loading && i === messages.length - 1 && m.role === "assistant" && m.content === "";
+          return (
+            <div
+              key={i}
+              className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                m.role === "user"
+                  ? "ml-auto bg-zinc-900 text-white dark:bg-white dark:text-black"
+                  : "mr-auto bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+              }`}
+            >
+              {isStreamingEmpty ? "Mentora is thinking..." : m.content}
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </main>
 

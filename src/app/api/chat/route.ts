@@ -32,15 +32,14 @@ Rules:
 - If they seem confused, re-explain more simply using an even more concrete example from the same domain, don't just repeat yourself.
 - Never invent facts about their interests or background beyond what they told you — ask if you need more detail.`;
 
-  // Gemini uses "model" instead of "assistant", and wraps text in a "parts" array.
   const contents = messages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
 
   const model = "gemini-2.5-flash";
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${process.env.GEMINI_API_KEY}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,16 +50,50 @@ Rules:
     }
   );
 
-  if (!response.ok) {
-    const errText = await response.text();
+  if (!geminiRes.ok || !geminiRes.body) {
+    const errText = await geminiRes.text().catch(() => "");
     console.error("Gemini API error:", errText);
     return NextResponse.json({ error: "AI request failed" }, { status: 500 });
   }
 
-  const data = await response.json();
-  const reply =
-    data.candidates?.[0]?.content?.parts?.[0]?.text ??
-    "Sorry, I couldn't generate a response.";
+  // Gemini streams back Server-Sent Events. We parse those and forward just
+  // the plain text deltas to the client, so the browser doesn't need to know
+  // anything about Gemini's response format.
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = geminiRes.body!.getReader();
+      const decoder = new TextDecoder();
+      const encoder = new TextEncoder();
+      let buffer = "";
 
-  return NextResponse.json({ reply });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) controller.enqueue(encoder.encode(text));
+          } catch {
+            // Ignore malformed SSE lines (e.g. keep-alive pings)
+          }
+        }
+      }
+
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
 }
