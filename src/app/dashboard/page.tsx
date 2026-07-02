@@ -1,12 +1,19 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
+import { getProfile } from "@/lib/db";
 
 export default async function DashboardPage() {
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
+  }
+
+  const profile = await getProfile(user.id);
+
+  if (!profile) {
+    redirect("/onboarding");
   }
 
   return (
@@ -21,9 +28,12 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
           Welcome, {user.firstName ?? "there"}.
         </h1>
-        <p className="text-zinc-600 dark:text-zinc-400">
-          This is your dashboard. Onboarding and your first C# chapter get
-          built here in Stage 2.
+        <p className="max-w-md text-zinc-600 dark:text-zinc-400">
+          We&apos;ll teach you C# using examples from{" "}
+          <span className="font-medium text-zinc-900 dark:text-zinc-50">
+            {profile.analogy_domain}
+          </span>
+          . Your first chapter and the AI chat get built here in Stage 3.
         </p>
       </main>
     </div>
