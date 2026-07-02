@@ -2,6 +2,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
 import { getProfile } from "@/lib/db";
+import Link from "next/link";
 
 export default async function DashboardPage() {
   const user = await currentUser();
@@ -33,8 +34,14 @@ export default async function DashboardPage() {
           <span className="font-medium text-zinc-900 dark:text-zinc-50">
             {profile.analogy_domain}
           </span>
-          . Your first chapter and the AI chat get built here in Stage 3.
+          .
         </p>
+        <Link
+          href="/chat"
+          className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-black"
+        >
+          Start chatting with Mentora
+        </Link>
       </main>
     </div>
   );
