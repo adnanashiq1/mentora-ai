@@ -15,7 +15,7 @@ export default async function DashboardPage() {
         <span className="font-semibold text-zinc-900 dark:text-zinc-50">
           Mentora AI
         </span>
-        <UserButton afterSignOutUrl="/" />
+        <UserButton />
       </header>
       <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
         <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
