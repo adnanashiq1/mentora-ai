@@ -2,8 +2,31 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { ArrowLeft, Send, PenTool } from "lucide-react";
 
 type Message = { role: "user" | "assistant"; content: string };
+
+function ChalkSquiggle() {
+  return (
+    <div className="flex items-center gap-2 text-chalk-dim">
+      <svg
+        className="chalk-squiggle"
+        width="60"
+        height="16"
+        viewBox="0 0 60 16"
+        fill="none"
+      >
+        <path
+          d="M2 8 Q 10 2, 18 8 T 34 8 T 50 8 T 58 8"
+          stroke="var(--coral)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="font-hand text-lg">sketching a thought...</span>
+    </div>
+  );
+}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -71,33 +94,48 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <Link href="/dashboard" className="font-semibold text-zinc-900 dark:text-zinc-50">
-          Mentora AI
+    <div className="notebook-bg flex min-h-screen flex-col">
+      <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
+        <Link href="/dashboard" className="flex items-center gap-2 text-chalk-dim hover:text-chalk">
+          <ArrowLeft size={18} />
+          <span className="text-sm">Dashboard</span>
         </Link>
-        <Link
-          href="/dashboard"
-          className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-50"
-        >
-          Back to dashboard
-        </Link>
+        <div className="doodle-underline">
+          <span className="font-hand text-2xl font-bold text-chalk">Mentora AI</span>
+          <svg viewBox="0 0 120 8" fill="none">
+            <path
+              d="M2 5 Q 30 1, 60 5 T 118 5"
+              stroke="var(--mustard)"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
+        <div className="w-[88px]" />
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-y-auto px-6 py-8">
         {messages.map((m, i) => {
           const isStreamingEmpty =
             loading && i === messages.length - 1 && m.role === "assistant" && m.content === "";
+
+          if (m.role === "assistant") {
+            return (
+              <div
+                key={i}
+                className="mr-auto max-w-[85%] rounded-2xl rounded-tl-sm border-l-4 border-coral bg-panel px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-chalk shadow-sm -rotate-[0.3deg]"
+              >
+                {isStreamingEmpty ? <ChalkSquiggle /> : m.content}
+              </div>
+            );
+          }
+
           return (
             <div
               key={i}
-              className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                m.role === "user"
-                  ? "ml-auto bg-zinc-900 text-white dark:bg-white dark:text-black"
-                  : "mr-auto bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-              }`}
+              className="ml-auto max-w-[80%] rotate-[0.3deg] rounded-2xl rounded-tr-sm bg-mustard px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-ink shadow-sm"
             >
-              {isStreamingEmpty ? "Mentora is thinking..." : m.content}
+              {m.content}
             </div>
           );
         })}
@@ -106,20 +144,24 @@ export default function ChatPage() {
 
       <form
         onSubmit={sendMessage}
-        className="mx-auto flex w-full max-w-2xl gap-2 px-6 pb-8"
+        className="mx-auto flex w-full max-w-2xl items-center gap-2 px-6 pb-8"
       >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask Mentora anything about C#..."
-          className="flex-1 rounded-full border border-zinc-300 bg-white px-4 py-3 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-        />
+        <div className="flex flex-1 items-center gap-2 rounded-full border border-chalk/15 bg-panel px-4 py-1">
+          <PenTool size={16} className="shrink-0 text-chalk-dim" />
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask Mentora anything about C#..."
+            className="flex-1 bg-transparent py-2 text-sm text-chalk placeholder:text-chalk-dim focus:outline-none"
+          />
+        </div>
         <button
           type="submit"
           disabled={loading}
-          className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+          aria-label="Send message"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-coral text-ink transition hover:brightness-110 disabled:opacity-50"
         >
-          Send
+          <Send size={18} />
         </button>
       </form>
     </div>

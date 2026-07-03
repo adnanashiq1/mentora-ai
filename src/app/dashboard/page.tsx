@@ -18,27 +18,22 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 dark:bg-black">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <span className="font-semibold text-zinc-900 dark:text-zinc-50">
-          Mentora AI
-        </span>
+    <div className="notebook-bg flex min-h-screen flex-col">
+      <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
+        <span className="font-hand text-2xl font-bold text-chalk">Mentora AI</span>
         <UserButton />
       </header>
       <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">
+        <h1 className="text-3xl font-bold text-chalk">
           Welcome, {user.firstName ?? "there"}.
         </h1>
-        <p className="max-w-md text-zinc-600 dark:text-zinc-400">
+        <p className="max-w-md text-chalk-dim">
           We&apos;ll teach you C# using examples from{" "}
-          <span className="font-medium text-zinc-900 dark:text-zinc-50">
-            {profile.analogy_domain}
-          </span>
-          .
+          <span className="font-medium text-mustard">{profile.analogy_domain}</span>.
         </p>
         <Link
           href="/chat"
-          className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-black"
+          className="rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
         >
           Start chatting with Mentora
         </Link>
