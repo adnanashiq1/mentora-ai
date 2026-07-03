@@ -34,3 +34,32 @@ export async function saveProfile(
       analogy_domain = EXCLUDED.analogy_domain
   `;
 }
+
+export type ChapterSection = {
+  heading: string;
+  body: string;
+  code?: string;
+};
+
+export type Chapter = {
+  id: number;
+  slug: string;
+  title: string;
+  order_num: number;
+  summary: string;
+  sections: ChapterSection[];
+};
+
+export async function getChapters(): Promise<Chapter[]> {
+  const rows = await sql`
+    SELECT * FROM chapters ORDER BY order_num ASC
+  `;
+  return rows as Chapter[];
+}
+
+export async function getChapterBySlug(slug: string): Promise<Chapter | null> {
+  const rows = await sql`
+    SELECT * FROM chapters WHERE slug = ${slug} LIMIT 1
+  `;
+  return (rows[0] as Chapter) ?? null;
+}

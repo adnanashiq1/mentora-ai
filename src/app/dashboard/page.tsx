@@ -31,12 +31,20 @@ export default async function DashboardPage() {
           We&apos;ll teach you C# using examples from{" "}
           <span className="font-medium text-mustard">{profile.analogy_domain}</span>.
         </p>
-        <Link
-          href="/chat"
-          className="rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
-        >
-          Start chatting with Mentora
-        </Link>
+        <div className="flex gap-3">
+          <Link
+            href="/chapters"
+            className="rounded-full border border-chalk/20 px-6 py-3 text-sm font-medium text-chalk hover:bg-panel"
+          >
+            View your course
+          </Link>
+          <Link
+            href="/chat"
+            className="rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
+          >
+            Start chatting with Mentora
+          </Link>
+        </div>
       </main>
     </div>
   );
