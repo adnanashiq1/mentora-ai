@@ -63,3 +63,102 @@ export async function getChapterBySlug(slug: string): Promise<Chapter | null> {
   `;
   return (rows[0] as Chapter) ?? null;
 }
+
+export type QuizQuestion = {
+  id: number;
+  chapter_slug: string;
+  question: string;
+  options: string[];
+  order_num: number;
+  hint: string;
+};
+
+type QuizQuestionWithAnswer = QuizQuestion & { correct_index: number };
+
+export async function getQuizQuestions(chapterSlug: string): Promise<QuizQuestion[]> {
+  const rows = await sql`
+    SELECT id, chapter_slug, question, options, order_num, hint
+    FROM quiz_questions
+    WHERE chapter_slug = ${chapterSlug}
+    ORDER BY order_num ASC
+  `;
+  return rows as QuizQuestion[];
+}
+
+export async function getQuizQuestionsWithAnswers(
+  ids: number[]
+): Promise<QuizQuestionWithAnswer[]> {
+  const rows = await sql`
+    SELECT * FROM quiz_questions WHERE id = ANY(${ids})
+  `;
+  return rows as QuizQuestionWithAnswer[];
+}
+
+export async function saveQuizResult(
+  userId: string,
+  chapterSlug: string,
+  score: number,
+  total: number,
+  pointsEarned: number,
+  totalPossible: number,
+  displayName: string
+): Promise<void> {
+  await sql`
+    INSERT INTO quiz_results (user_id, chapter_slug, score, total, points_earned, total_possible, display_name)
+    VALUES (${userId}, ${chapterSlug}, ${score}, ${total}, ${pointsEarned}, ${totalPossible}, ${displayName})
+  `;
+}
+
+export async function getLatestQuizResult(userId: string, chapterSlug: string) {
+  const rows = await sql`
+    SELECT * FROM quiz_results
+    WHERE user_id = ${userId} AND chapter_slug = ${chapterSlug}
+    ORDER BY attempted_at DESC
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+export type LeaderboardEntry = {
+  user_id: string;
+  display_name: string;
+  total_points: number;
+};
+
+export async function getLeaderboard(limit = 20): Promise<LeaderboardEntry[]> {
+  const rows = await sql`
+    SELECT
+      user_id,
+      (array_agg(display_name ORDER BY attempted_at DESC))[1] AS display_name,
+      SUM(points_earned)::int AS total_points
+    FROM quiz_results
+    GROUP BY user_id
+    ORDER BY total_points DESC
+    LIMIT ${limit}
+  `;
+  return rows as LeaderboardEntry[];
+}
+
+export type ChapterProgress = {
+  slug: string;
+  title: string;
+  order_num: number;
+  best_score: number | null;
+  best_total: number | null;
+  best_points: number | null;
+};
+
+export async function getUserProgress(userId: string): Promise<ChapterProgress[]> {
+  const rows = await sql`
+    SELECT
+      c.slug,
+      c.title,
+      c.order_num,
+      (SELECT MAX(score) FROM quiz_results r WHERE r.chapter_slug = c.slug AND r.user_id = ${userId}) AS best_score,
+      (SELECT MAX(total) FROM quiz_results r WHERE r.chapter_slug = c.slug AND r.user_id = ${userId}) AS best_total,
+      (SELECT MAX(points_earned) FROM quiz_results r WHERE r.chapter_slug = c.slug AND r.user_id = ${userId}) AS best_points
+    FROM chapters c
+    ORDER BY c.order_num ASC
+  `;
+  return rows as ChapterProgress[];
+}

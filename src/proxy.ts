@@ -2,7 +2,14 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Routes that require the user to be signed in.
 // Add more protected routes here as we build them (e.g. "/chapters(.*)").
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/chat(.*)", "/onboarding(.*)", "/chapters(.*)"]);
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/chat(.*)",
+  "/onboarding(.*)",
+  "/chapters(.*)",
+  "/leaderboard(.*)",
+  "/progress(.*)",
+]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isProtectedRoute(req)) {

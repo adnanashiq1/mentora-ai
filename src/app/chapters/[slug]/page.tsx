@@ -44,13 +44,21 @@ export default async function ChapterDetailPage({
           </div>
         ))}
 
-        <Link
-          href="/chat"
-          className="mt-4 flex w-fit items-center gap-2 rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
-        >
-          <MessageCircle size={16} />
-          Discuss this chapter with Mentora
-        </Link>
+        <div className="mt-4 flex gap-3">
+          <Link
+            href={`/chapters/${chapter.slug}/quiz`}
+            className="flex w-fit items-center gap-2 rounded-full border border-chalk/20 px-6 py-3 text-sm font-medium text-chalk hover:bg-panel"
+          >
+            Take the quiz
+          </Link>
+          <Link
+            href="/chat"
+            className="flex w-fit items-center gap-2 rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
+          >
+            <MessageCircle size={16} />
+            Discuss this chapter with Mentora
+          </Link>
+        </div>
       </main>
     </div>
   );
