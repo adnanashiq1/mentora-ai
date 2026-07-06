@@ -45,6 +45,12 @@ export default async function DashboardPage() {
             My progress
           </Link>
           <Link
+            href="/sandbox"
+            className="rounded-full border border-chalk/20 px-6 py-3 text-sm font-medium text-chalk hover:bg-panel"
+          >
+            Code sandbox
+          </Link>
+          <Link
             href="/leaderboard"
             className="rounded-full border border-chalk/20 px-6 py-3 text-sm font-medium text-chalk hover:bg-panel"
           >

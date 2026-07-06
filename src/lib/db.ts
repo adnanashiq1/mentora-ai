@@ -39,6 +39,7 @@ export type ChapterSection = {
   heading: string;
   body: string;
   code?: string;
+  runnable?: boolean;
 };
 
 export type Chapter = {
