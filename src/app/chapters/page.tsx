@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getChapters } from "@/lib/db";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import LogoMark from "@/components/LogoMark";
 
 export default async function ChaptersPage() {
   const user = await currentUser();
@@ -17,7 +18,9 @@ export default async function ChaptersPage() {
           <ArrowLeft size={18} />
           <span className="text-sm">Dashboard</span>
         </Link>
-        <span className="font-hand text-2xl font-bold text-chalk">C# Course</span>
+        <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
+          <LogoMark size={26} /> C# Course
+        </span>
         <div className="w-[88px]" />
       </header>
 

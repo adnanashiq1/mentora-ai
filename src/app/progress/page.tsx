@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getUserProgress } from "@/lib/db";
 import Link from "next/link";
 import { ArrowLeft, Check } from "lucide-react";
+import LogoMark from "@/components/LogoMark";
 
 export default async function ProgressPage() {
   const user = await currentUser();
@@ -20,7 +21,9 @@ export default async function ProgressPage() {
           <ArrowLeft size={18} />
           <span className="text-sm">Dashboard</span>
         </Link>
-        <span className="font-hand text-2xl font-bold text-chalk">Your Progress</span>
+        <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
+          <LogoMark size={26} /> Your Progress
+        </span>
         <div className="w-[88px]" />
       </header>
 

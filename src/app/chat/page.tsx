@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, Send, PenTool } from "lucide-react";
+import LogoMark from "@/components/LogoMark";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -101,7 +102,9 @@ export default function ChatPage() {
           <span className="text-sm">Dashboard</span>
         </Link>
         <div className="doodle-underline">
-          <span className="font-hand text-2xl font-bold text-chalk">Mentora AI</span>
+          <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
+            <LogoMark size={26} /> Mentora AI
+          </span>
           <svg viewBox="0 0 120 8" fill="none">
             <path
               d="M2 5 Q 30 1, 60 5 T 118 5"

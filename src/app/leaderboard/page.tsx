@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getLeaderboard } from "@/lib/db";
 import Link from "next/link";
 import { ArrowLeft, Trophy } from "lucide-react";
+import LogoMark from "@/components/LogoMark";
 
 export default async function LeaderboardPage() {
   const user = await currentUser();
@@ -17,7 +18,9 @@ export default async function LeaderboardPage() {
           <ArrowLeft size={18} />
           <span className="text-sm">Dashboard</span>
         </Link>
-        <span className="font-hand text-2xl font-bold text-chalk">Leaderboard</span>
+        <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
+          <LogoMark size={26} /> Leaderboard
+        </span>
         <div className="w-[88px]" />
       </header>
 

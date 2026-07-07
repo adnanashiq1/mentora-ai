@@ -3,6 +3,7 @@ import { UserButton } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
 import { getProfile } from "@/lib/db";
 import Link from "next/link";
+import LogoMark from "@/components/LogoMark";
 
 export default async function DashboardPage() {
   const user = await currentUser();
@@ -20,7 +21,9 @@ export default async function DashboardPage() {
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
       <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
-        <span className="font-hand text-2xl font-bold text-chalk">Mentora AI</span>
+        <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
+          <LogoMark size={28} /> Mentora AI
+        </span>
         <UserButton />
       </header>
       <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
@@ -43,6 +46,12 @@ export default async function DashboardPage() {
             className="rounded-full border border-chalk/20 px-6 py-3 text-sm font-medium text-chalk hover:bg-panel"
           >
             My progress
+          </Link>
+          <Link
+            href="/exam"
+            className="rounded-full border border-mustard/40 px-6 py-3 text-sm font-medium text-mustard hover:bg-panel"
+          >
+            Final Exam
           </Link>
           <Link
             href="/sandbox"

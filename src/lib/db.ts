@@ -163,3 +163,159 @@ export async function getUserProgress(userId: string): Promise<ChapterProgress[]
   `;
   return rows as ChapterProgress[];
 }
+
+// --- Final Exam ---
+
+const EXAM_PASS_THRESHOLD = 0.7; // 70% to pass
+const EXAM_MAX_ATTEMPTS = 3;
+const EXAM_COOLDOWN_DAYS = 21; // 3 weeks
+
+export type ExamQuestion = {
+  id: number;
+  question: string;
+  options: string[];
+  order_num: number;
+};
+
+type ExamQuestionWithAnswer = ExamQuestion & { correct_index: number };
+
+export async function getExamQuestions(): Promise<ExamQuestion[]> {
+  const rows = await sql`
+    SELECT id, question, options, order_num FROM exam_questions ORDER BY order_num ASC
+  `;
+  return rows as ExamQuestion[];
+}
+
+export async function getExamQuestionsWithAnswers(
+  ids: number[]
+): Promise<ExamQuestionWithAnswer[]> {
+  const rows = await sql`
+    SELECT * FROM exam_questions WHERE id = ANY(${ids})
+  `;
+  return rows as ExamQuestionWithAnswer[];
+}
+
+export type ExamAttempt = {
+  id: number;
+  user_id: string;
+  display_name: string;
+  score: number;
+  total: number;
+  passed: boolean;
+  flagged: boolean;
+  mcq_score: number;
+  mcq_total: number;
+  coding_score: number;
+  overall_percentage: number;
+  verification_code: string | null;
+  attempted_at: string;
+};
+
+export async function getExamAttempts(userId: string): Promise<ExamAttempt[]> {
+  const rows = await sql`
+    SELECT * FROM exam_attempts WHERE user_id = ${userId} ORDER BY attempted_at DESC
+  `;
+  return rows as ExamAttempt[];
+}
+
+export type ExamStatus =
+  | { state: "can_attempt"; attemptsUsed: number; attemptsRemaining: number }
+  | { state: "passed"; passedAttempt: ExamAttempt }
+  | { state: "cooldown"; eligibleAt: Date; attemptsUsed: number; attemptsRemaining: number }
+  | { state: "locked"; attemptsUsed: number };
+
+export async function getExamStatus(userId: string): Promise<ExamStatus> {
+  const attempts = await getExamAttempts(userId); // newest first
+  const passedAttempt = attempts.find((a) => a.passed);
+  if (passedAttempt) {
+    return { state: "passed", passedAttempt };
+  }
+
+  const attemptsUsed = attempts.length;
+  const attemptsRemaining = EXAM_MAX_ATTEMPTS - attemptsUsed;
+
+  if (attemptsUsed >= EXAM_MAX_ATTEMPTS) {
+    return { state: "locked", attemptsUsed };
+  }
+
+  const lastAttempt = attempts[0];
+  if (lastAttempt) {
+    const lastDate = new Date(lastAttempt.attempted_at);
+    const eligibleAt = new Date(lastDate.getTime() + EXAM_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+    if (eligibleAt.getTime() > Date.now()) {
+      return { state: "cooldown", eligibleAt, attemptsUsed, attemptsRemaining };
+    }
+  }
+
+  return { state: "can_attempt", attemptsUsed, attemptsRemaining };
+}
+
+export function computeOverallPercentage(
+  mcqScore: number,
+  mcqTotal: number,
+  codingScore: number // 0-100
+): number {
+  const mcqPercent = mcqTotal > 0 ? (mcqScore / mcqTotal) * 100 : 0;
+  return mcqPercent * 0.6 + codingScore * 0.4;
+}
+
+export function computeExamPass(overallPercentage: number): boolean {
+  return overallPercentage >= EXAM_PASS_THRESHOLD * 100;
+}
+
+// --- Exam coding challenges ---
+
+export type ExamCodingQuestion = {
+  id: number;
+  title: string;
+  difficulty: string;
+  prompt: string;
+  starter_code: string;
+  order_num: number;
+};
+
+export async function getExamCodingQuestions(): Promise<ExamCodingQuestion[]> {
+  const rows = await sql`
+    SELECT * FROM exam_coding_questions ORDER BY order_num ASC
+  `;
+  return rows as ExamCodingQuestion[];
+}
+
+function generateVerificationCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars (0/O, 1/I)
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+export async function saveFullExamAttempt(params: {
+  userId: string;
+  displayName: string;
+  mcqScore: number;
+  mcqTotal: number;
+  codingScore: number; // 0-100
+  overallPercentage: number; // 0-100
+  passed: boolean;
+  flagged: boolean;
+}): Promise<{ verificationCode: string | null }> {
+  const verificationCode = params.passed && !params.flagged ? generateVerificationCode() : null;
+
+  await sql`
+    INSERT INTO exam_attempts
+      (user_id, display_name, score, total, passed, flagged, mcq_score, mcq_total, coding_score, overall_percentage, verification_code)
+    VALUES
+      (${params.userId}, ${params.displayName}, ${params.mcqScore}, ${params.mcqTotal}, ${params.passed}, ${params.flagged},
+       ${params.mcqScore}, ${params.mcqTotal}, ${params.codingScore}, ${params.overallPercentage}, ${verificationCode})
+  `;
+
+  return { verificationCode };
+}
+
+export async function getAttemptByVerificationCode(code: string): Promise<ExamAttempt | null> {
+  const rows = await sql`
+    SELECT * FROM exam_attempts WHERE verification_code = ${code} LIMIT 1
+  `;
+  return (rows[0] as ExamAttempt) ?? null;
+}

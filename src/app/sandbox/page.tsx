@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowLeft, Play } from "lucide-react";
+import LogoMark from "@/components/LogoMark";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
@@ -106,7 +107,9 @@ function SandboxInner() {
             Dashboard
           </Link>
         </div>
-        <span className="font-hand text-2xl font-bold text-chalk">Code Sandbox</span>
+        <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
+          <LogoMark size={26} /> Code Sandbox
+        </span>
         <button
           onClick={runCode}
           disabled={running}
