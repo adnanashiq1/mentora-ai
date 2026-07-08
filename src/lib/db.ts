@@ -203,51 +203,79 @@ export type ExamAttempt = {
   total: number;
   passed: boolean;
   flagged: boolean;
+  status: "in_progress" | "completed";
   mcq_score: number;
   mcq_total: number;
   coding_score: number;
   overall_percentage: number;
-  verification_code: string | null;
   attempted_at: string;
 };
+
+// Postgres NUMERIC columns come back from the driver as strings (to avoid
+// silent precision loss), not JS numbers - so raw rows can't just be cast.
+// This coerces the numeric fields properly wherever an attempt row is read.
+function normalizeExamAttempt(row: Record<string, unknown>): ExamAttempt {
+  return {
+    ...row,
+    score: Number(row.score),
+    total: Number(row.total),
+    mcq_score: Number(row.mcq_score),
+    mcq_total: Number(row.mcq_total),
+    coding_score: Number(row.coding_score),
+    overall_percentage: Number(row.overall_percentage),
+  } as ExamAttempt;
+}
 
 export async function getExamAttempts(userId: string): Promise<ExamAttempt[]> {
   const rows = await sql`
     SELECT * FROM exam_attempts WHERE user_id = ${userId} ORDER BY attempted_at DESC
   `;
-  return rows as ExamAttempt[];
+  return rows.map(normalizeExamAttempt);
+}
+
+async function getBestPassedAttempt(userId: string): Promise<ExamAttempt | null> {
+  const rows = await sql`
+    SELECT * FROM exam_attempts
+    WHERE user_id = ${userId} AND passed = true AND status = 'completed'
+    ORDER BY overall_percentage DESC
+    LIMIT 1
+  `;
+  return rows[0] ? normalizeExamAttempt(rows[0]) : null;
 }
 
 export type ExamStatus =
-  | { state: "can_attempt"; attemptsUsed: number; attemptsRemaining: number }
-  | { state: "passed"; passedAttempt: ExamAttempt }
-  | { state: "cooldown"; eligibleAt: Date; attemptsUsed: number; attemptsRemaining: number }
+  | { state: "can_attempt"; attemptsUsed: number; attemptsRemaining: number; bestPassedAttempt: ExamAttempt | null }
+  | { state: "cooldown"; eligibleAt: Date; attemptsUsed: number; attemptsRemaining: number; bestPassedAttempt: ExamAttempt | null }
+  | { state: "passed_final"; bestPassedAttempt: ExamAttempt }
   | { state: "locked"; attemptsUsed: number };
 
 export async function getExamStatus(userId: string): Promise<ExamStatus> {
-  const attempts = await getExamAttempts(userId); // newest first
-  const passedAttempt = attempts.find((a) => a.passed);
-  if (passedAttempt) {
-    return { state: "passed", passedAttempt };
-  }
+  const attempts = await getExamAttempts(userId); // newest first, includes in_progress
+  const bestPassedAttempt = await getBestPassedAttempt(userId);
 
   const attemptsUsed = attempts.length;
   const attemptsRemaining = EXAM_MAX_ATTEMPTS - attemptsUsed;
 
   if (attemptsUsed >= EXAM_MAX_ATTEMPTS) {
+    if (bestPassedAttempt) {
+      return { state: "passed_final", bestPassedAttempt };
+    }
     return { state: "locked", attemptsUsed };
   }
 
+  // Cooldown applies after any attempt that wasn't a pass - this includes
+  // an abandoned/in-progress attempt (closing the tab without finishing),
+  // so someone can't dodge the cooldown by simply never submitting.
   const lastAttempt = attempts[0];
-  if (lastAttempt) {
+  if (lastAttempt && !lastAttempt.passed) {
     const lastDate = new Date(lastAttempt.attempted_at);
     const eligibleAt = new Date(lastDate.getTime() + EXAM_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
     if (eligibleAt.getTime() > Date.now()) {
-      return { state: "cooldown", eligibleAt, attemptsUsed, attemptsRemaining };
+      return { state: "cooldown", eligibleAt, attemptsUsed, attemptsRemaining, bestPassedAttempt };
     }
   }
 
-  return { state: "can_attempt", attemptsUsed, attemptsRemaining };
+  return { state: "can_attempt", attemptsUsed, attemptsRemaining, bestPassedAttempt };
 }
 
 export function computeOverallPercentage(
@@ -281,6 +309,19 @@ export async function getExamCodingQuestions(): Promise<ExamCodingQuestion[]> {
   return rows as ExamCodingQuestion[];
 }
 
+// Reserves an attempt the moment the student STARTS the exam, not when
+// they finish. This closes a real exploit: previously, closing the tab
+// mid-exam left no record at all, so someone could "practice" for free
+// indefinitely as long as they never hit Submit.
+export async function startExamAttempt(userId: string, displayName: string): Promise<number> {
+  const rows = await sql`
+    INSERT INTO exam_attempts (user_id, display_name, score, total, passed, flagged, status)
+    VALUES (${userId}, ${displayName}, 0, 0, false, false, 'in_progress')
+    RETURNING id
+  `;
+  return rows[0].id as number;
+}
+
 function generateVerificationCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars (0/O, 1/I)
   let code = "";
@@ -290,32 +331,84 @@ function generateVerificationCode(): string {
   return code;
 }
 
-export async function saveFullExamAttempt(params: {
+// Finalizes an in-progress attempt with its real results. Verifies the
+// attempt actually belongs to this user and hasn't already been completed,
+// so the endpoint can't be replayed to overwrite a finished result.
+export async function completeExamAttempt(params: {
+  attemptId: number;
   userId: string;
-  displayName: string;
   mcqScore: number;
   mcqTotal: number;
-  codingScore: number; // 0-100
-  overallPercentage: number; // 0-100
+  codingScore: number;
+  overallPercentage: number;
   passed: boolean;
   flagged: boolean;
-}): Promise<{ verificationCode: string | null }> {
-  const verificationCode = params.passed && !params.flagged ? generateVerificationCode() : null;
-
-  await sql`
-    INSERT INTO exam_attempts
-      (user_id, display_name, score, total, passed, flagged, mcq_score, mcq_total, coding_score, overall_percentage, verification_code)
-    VALUES
-      (${params.userId}, ${params.displayName}, ${params.mcqScore}, ${params.mcqTotal}, ${params.passed}, ${params.flagged},
-       ${params.mcqScore}, ${params.mcqTotal}, ${params.codingScore}, ${params.overallPercentage}, ${verificationCode})
+}): Promise<boolean> {
+  const rows = await sql`
+    UPDATE exam_attempts
+    SET score = ${params.mcqScore},
+        total = ${params.mcqTotal},
+        passed = ${params.passed},
+        flagged = ${params.flagged},
+        mcq_score = ${params.mcqScore},
+        mcq_total = ${params.mcqTotal},
+        coding_score = ${params.codingScore},
+        overall_percentage = ${params.overallPercentage},
+        status = 'completed'
+    WHERE id = ${params.attemptId} AND user_id = ${params.userId} AND status = 'in_progress'
+    RETURNING id
   `;
-
-  return { verificationCode };
+  return rows.length > 0;
 }
 
-export async function getAttemptByVerificationCode(code: string): Promise<ExamAttempt | null> {
-  const rows = await sql`
-    SELECT * FROM exam_attempts WHERE verification_code = ${code} LIMIT 1
+// A stable, permanent certificate identity per user. Retaking the exam to
+// improve a score never changes this code, so a certificate someone has
+// already shared or had verified stays valid and simply reflects the new
+// best score going forward.
+export async function getOrCreateCertificateCode(
+  userId: string,
+  displayName: string
+): Promise<string> {
+  const existing = await sql`
+    SELECT verification_code FROM certificates WHERE user_id = ${userId} LIMIT 1
   `;
-  return (rows[0] as ExamAttempt) ?? null;
+  if (existing[0]) {
+    return existing[0].verification_code as string;
+  }
+
+  const code = generateVerificationCode();
+  await sql`
+    INSERT INTO certificates (user_id, verification_code, display_name)
+    VALUES (${userId}, ${code}, ${displayName})
+    ON CONFLICT (user_id) DO NOTHING
+  `;
+  const rows = await sql`
+    SELECT verification_code FROM certificates WHERE user_id = ${userId} LIMIT 1
+  `;
+  return rows[0].verification_code as string;
+}
+
+export type CertificateLookup = {
+  displayName: string;
+  overallPercentage: number;
+  attemptedAt: string;
+  verificationCode: string;
+};
+
+export async function getCertificateByCode(code: string): Promise<CertificateLookup | null> {
+  const rows = await sql`
+    SELECT c.display_name, c.verification_code, a.overall_percentage, a.attempted_at
+    FROM certificates c
+    JOIN exam_attempts a ON a.user_id = c.user_id AND a.passed = true AND a.status = 'completed'
+    WHERE c.verification_code = ${code}
+    ORDER BY a.overall_percentage DESC
+    LIMIT 1
+  `;
+  if (!rows[0]) return null;
+  return {
+    displayName: rows[0].display_name,
+    overallPercentage: Number(rows[0].overall_percentage),
+    attemptedAt: rows[0].attempted_at,
+    verificationCode: rows[0].verification_code,
+  };
 }

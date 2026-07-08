@@ -1,4 +1,4 @@
-import { getAttemptByVerificationCode } from "@/lib/db";
+import { getCertificateByCode } from "@/lib/db";
 import Link from "next/link";
 import { CheckCircle2, XCircle } from "lucide-react";
 import LogoMark from "@/components/LogoMark";
@@ -9,7 +9,7 @@ export default async function VerifyCertificatePage({
   params: Promise<{ code: string }>;
 }) {
   const { code } = await params;
-  const attempt = await getAttemptByVerificationCode(code.toUpperCase());
+  const cert = await getCertificateByCode(code.toUpperCase());
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col items-center justify-center px-6">
@@ -19,17 +19,17 @@ export default async function VerifyCertificatePage({
           <span className="font-hand text-xl font-bold text-chalk">Mentora AI</span>
         </Link>
 
-        {attempt ? (
+        {cert ? (
           <>
             <CheckCircle2 className="text-mustard" size={48} />
             <div>
               <p className="text-lg font-semibold text-chalk">Valid Certificate</p>
               <p className="mt-1 text-chalk-dim">
-                Issued to <span className="text-chalk">{attempt.display_name}</span>
+                Issued to <span className="text-chalk">{cert.displayName}</span>
               </p>
               <p className="text-chalk-dim">
-                Score: {attempt.overall_percentage.toFixed(1)}% · Issued{" "}
-                {new Date(attempt.attempted_at).toLocaleDateString("en-US", {
+                Best score: {cert.overallPercentage.toFixed(1)}% · Last updated{" "}
+                {new Date(cert.attemptedAt).toLocaleDateString("en-US", {
                   year: "numeric",
                   month: "long",
                   day: "numeric",

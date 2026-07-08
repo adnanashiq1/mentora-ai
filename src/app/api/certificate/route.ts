@@ -1,6 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getExamStatus } from "@/lib/db";
+import { getExamStatus, getOrCreateCertificateCode } from "@/lib/db";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export async function GET(req: Request) {
@@ -10,14 +10,19 @@ export async function GET(req: Request) {
   }
 
   const status = await getExamStatus(user.id);
-  if (status.state !== "passed") {
+  const best = "bestPassedAttempt" in status ? status.bestPassedAttempt : null;
+
+  if (!best) {
     return NextResponse.json(
       { error: "No passing exam attempt found for this account." },
       { status: 403 }
     );
   }
 
-  const { passedAttempt } = status;
+  const displayName = user.firstName || user.username || "Student";
+  const verificationCode = await getOrCreateCertificateCode(user.id, displayName);
+
+  const passedAttempt = best;
   const name = user.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Student";
   const dateStr = new Date(passedAttempt.attempted_at).toLocaleDateString("en-US", {
     year: "numeric",
@@ -117,9 +122,7 @@ export async function GET(req: Request) {
 
   // --- Verification code + URL + date, bottom center ---
   const origin = new URL(req.url).origin;
-  const verifyUrl = passedAttempt.verification_code
-    ? `${origin}/verify/${passedAttempt.verification_code}`
-    : "N/A";
+  const verifyUrl = `${origin}/verify/${verificationCode}`;
   centerText(`Verify at: ${verifyUrl}`, 78, regular, 10, grey);
   centerText(`Issued: ${dateStr}`, 62, regular, 10, grey);
 

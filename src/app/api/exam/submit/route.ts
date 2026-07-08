@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 import {
   getExamQuestionsWithAnswers,
   getExamCodingQuestions,
-  getExamStatus,
-  saveFullExamAttempt,
+  completeExamAttempt,
   computeOverallPercentage,
   computeExamPass,
+  getOrCreateCertificateCode,
 } from "@/lib/db";
 
 type McqSubmission = { questionId: number; selectedIndex: number };
@@ -90,25 +90,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const status = await getExamStatus(userId);
-  if (status.state !== "can_attempt") {
-    return NextResponse.json(
-      { error: "You are not currently eligible to take the exam." },
-      { status: 403 }
-    );
-  }
-
   const user = await currentUser();
   const displayName = user?.firstName || user?.username || "Student";
 
   const {
+    attemptId,
     mcqAnswers,
     codingAnswers,
     flagged,
-  }: { mcqAnswers: McqSubmission[]; codingAnswers: CodingSubmission[]; flagged: boolean } =
-    await req.json();
+  }: {
+    attemptId: number;
+    mcqAnswers: McqSubmission[];
+    codingAnswers: CodingSubmission[];
+    flagged: boolean;
+  } = await req.json();
 
-  if (!Array.isArray(mcqAnswers) || mcqAnswers.length === 0) {
+  if (!attemptId || !Array.isArray(mcqAnswers) || mcqAnswers.length === 0) {
     return NextResponse.json({ error: "Invalid submission" }, { status: 400 });
   }
 
@@ -142,9 +139,13 @@ export async function POST(req: Request) {
   const overallPercentage = computeOverallPercentage(mcqScore, mcqTotal, codingScore);
   const passed = !flagged && computeExamPass(overallPercentage);
 
-  const { verificationCode } = await saveFullExamAttempt({
+  // Finalize the attempt that was reserved when the exam started. This
+  // fails if the attemptId doesn't belong to this user or was already
+  // completed - preventing replay against someone else's reservation or
+  // double-submitting the same one.
+  const updated = await completeExamAttempt({
+    attemptId,
     userId,
-    displayName,
     mcqScore,
     mcqTotal,
     codingScore,
@@ -152,6 +153,17 @@ export async function POST(req: Request) {
     passed,
     flagged: !!flagged,
   });
+
+  if (!updated) {
+    return NextResponse.json(
+      { error: "This exam attempt could not be found or was already submitted." },
+      { status: 409 }
+    );
+  }
+
+  const verificationCode = passed
+    ? await getOrCreateCertificateCode(userId, displayName)
+    : null;
 
   return NextResponse.json({
     mcqScore,

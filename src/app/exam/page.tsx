@@ -26,12 +26,13 @@ export default async function ExamPage() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-10">
-        {status.state === "passed" && (
+        {status.state === "passed_final" && (
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-mustard bg-mustard/10 px-6 py-10 text-center">
             <p className="font-hand text-3xl font-bold text-chalk">You've passed! 🎉</p>
             <p className="text-chalk-dim">
-              Score: {status.passedAttempt.score} / {status.passedAttempt.total}
+              Best score: {status.bestPassedAttempt.overall_percentage.toFixed(1)}%
             </p>
+            <p className="text-sm text-chalk-dim">You've used all 3 attempts.</p>
             <a
               href="/api/certificate"
               className="rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
@@ -67,11 +68,42 @@ export default async function ExamPage() {
             <p className="text-sm text-chalk-dim">
               Attempts remaining: {status.attemptsRemaining}
             </p>
+            {status.bestPassedAttempt && (
+              <>
+                <p className="text-sm text-mustard">
+                  You've already passed with {status.bestPassedAttempt.overall_percentage.toFixed(1)}%.
+                </p>
+                <a
+                  href="/api/certificate"
+                  className="rounded-full bg-coral px-6 py-3 text-sm font-medium text-ink transition hover:brightness-110"
+                >
+                  Download your certificate
+                </a>
+              </>
+            )}
           </div>
         )}
 
         {status.state === "can_attempt" && (
           <>
+            {status.bestPassedAttempt && (
+              <div className="mb-4 flex flex-col items-center gap-2 rounded-xl border border-mustard/40 bg-mustard/10 px-4 py-3 text-center text-sm">
+                <p className="text-chalk">
+                  You've already passed with{" "}
+                  <span className="font-semibold text-mustard">
+                    {status.bestPassedAttempt.overall_percentage.toFixed(1)}%
+                  </span>
+                  . Retaking below to improve still uses one of your remaining attempts, and
+                  your certificate will always reflect your best score.
+                </p>
+                <a
+                  href="/api/certificate"
+                  className="text-xs text-mustard underline hover:text-chalk"
+                >
+                  Download your current certificate
+                </a>
+              </div>
+            )}
             <div className="mb-6 flex flex-col gap-1 rounded-xl border border-chalk/10 bg-panel px-4 py-3 text-sm text-chalk-dim">
               <p>
                 20 multiple-choice questions (60% of your score) plus 2 coding challenges,
@@ -81,7 +113,8 @@ export default async function ExamPage() {
               <p>
                 If you don&apos;t pass, there&apos;s a 3-week wait before trying again. Leaving
                 this tab/window during the exam will end your attempt automatically - stay on
-                this page until you submit.
+                this page until you submit. Your attempt is reserved the moment you start, even
+                if you don&apos;t finish.
               </p>
             </div>
             <ExamForm

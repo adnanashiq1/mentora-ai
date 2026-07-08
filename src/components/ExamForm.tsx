@@ -8,7 +8,7 @@ import type { ExamQuestion, ExamCodingQuestion } from "@/lib/db";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-type Phase = "mcq" | "coding" | "submitting" | "result";
+type Phase = "starting" | "mcq" | "coding" | "submitting" | "result";
 
 type CodingResult = { codingQuestionId: number; score: number; feedback: string };
 type ExamResult = {
@@ -28,7 +28,8 @@ export default function ExamForm({
   questions: ExamQuestion[];
   codingQuestions: ExamCodingQuestion[];
 }) {
-  const [phase, setPhase] = useState<Phase>("mcq");
+  const [phase, setPhase] = useState<Phase>("starting");
+  const [attemptId, setAttemptId] = useState<number | null>(null);
   const [mcqIndex, setMcqIndex] = useState(0);
   const [mcqSelected, setMcqSelected] = useState<Record<number, number>>({});
   const [codingIndex, setCodingIndex] = useState(0);
@@ -45,14 +46,39 @@ export default function ExamForm({
   // Keep the latest state in refs so the visibility/blur handlers (added
   // once on mount) always see current answers when they trigger a forced
   // submit, without needing to re-bind listeners on every keystroke.
-  const stateRef = useRef({ mcqSelected, code, phase });
+  const stateRef = useRef({ mcqSelected, code, phase, attemptId });
   useEffect(() => {
-    stateRef.current = { mcqSelected, code, phase };
-  }, [mcqSelected, code, phase]);
+    stateRef.current = { mcqSelected, code, phase, attemptId };
+  }, [mcqSelected, code, phase, attemptId]);
+
+  // Reserve an attempt the moment the exam actually starts - this counts
+  // against the 3-attempt limit even if the tab is closed before finishing,
+  // instead of only recording anything at final submission.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/exam/start", { method: "POST" });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok) {
+          setAttemptId(data.attemptId);
+          setPhase("mcq");
+        } else {
+          setError(data.error ?? "Could not start the exam.");
+        }
+      } catch {
+        if (!cancelled) setError("Network error starting the exam.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const submitExam = useCallback(async (isFlagged: boolean) => {
     setPhase("submitting");
-    const { mcqSelected: mcq, code: currentCode } = stateRef.current;
+    const { mcqSelected: mcq, code: currentCode, attemptId: id } = stateRef.current;
 
     const mcqAnswers = questions
       .filter((q) => mcq[q.id] !== undefined)
@@ -67,7 +93,7 @@ export default function ExamForm({
       const res = await fetch("/api/exam/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mcqAnswers, codingAnswers, flagged: isFlagged }),
+        body: JSON.stringify({ attemptId: id, mcqAnswers, codingAnswers, flagged: isFlagged }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -87,7 +113,9 @@ export default function ExamForm({
   // Anti-cheat: detect leaving the tab/window during an active attempt.
   useEffect(() => {
     function handleViolation() {
-      if (stateRef.current.phase === "result" || stateRef.current.phase === "submitting") return;
+      const activePhase = stateRef.current.phase;
+      if (activePhase === "result" || activePhase === "submitting" || activePhase === "starting")
+        return;
       setViolations((v) => {
         const next = v + 1;
         if (next >= 2) {
@@ -113,6 +141,22 @@ export default function ExamForm({
     };
   }, [submitExam]);
 
+  // Warn before an accidental refresh/close during an active attempt.
+  // This can't force-prevent leaving, but it stops casual/accidental loss
+  // of an attempt, and reloading no longer helps anyone "escape" anyway -
+  // the attempt was already reserved server-side the moment it started.
+  useEffect(() => {
+    function handler(e: BeforeUnloadEvent) {
+      const activePhase = stateRef.current.phase;
+      if (activePhase === "mcq" || activePhase === "coding") {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
   function blockClipboard(e: React.ClipboardEvent | React.MouseEvent) {
     e.preventDefault();
   }
@@ -137,6 +181,24 @@ export default function ExamForm({
       setRunning(false);
     }
   }
+
+  // --- STARTING PHASE ---
+  if (phase === "starting") {
+    return (
+      <div className="flex flex-col items-center gap-3 py-10 text-center">
+        <p className="text-chalk-dim">{error || "Starting your exam..."}</p>
+        {error && (
+          <Link
+            href="/dashboard"
+            className="rounded-full border border-chalk/20 px-6 py-3 text-sm font-medium text-chalk hover:bg-panel"
+          >
+            Back to dashboard
+          </Link>
+        )}
+      </div>
+    );
+  }
+
 
   // --- RESULT PHASE ---
   if (phase === "result" && result) {
@@ -327,6 +389,7 @@ export default function ExamForm({
           onChange={(v) => setCode((prev) => ({ ...prev, [cq.id]: v ?? "" }))}
           options={{ fontSize: 14, minimap: { enabled: false } }}
           onMount={(editor, monaco) => {
+            // Keyboard-shortcut paste (desktop Ctrl/Cmd+V)
             editor.onKeyDown((e: { ctrlKey: boolean; metaKey: boolean; keyCode: number; preventDefault: () => void; stopPropagation: () => void }) => {
               const isPaste = (e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV;
               if (isPaste) {
@@ -334,6 +397,31 @@ export default function ExamForm({
                 e.stopPropagation();
               }
             });
+
+            // The actual browser "paste" event - this is what fires no
+            // matter HOW paste was triggered, including mobile's long-press
+            // "Paste" menu, which never sends a Ctrl+V keystroke at all and
+            // completely bypassed the check above. Attaching directly to
+            // the editor's real DOM node catches it regardless of trigger.
+            const domNode = editor.getDomNode();
+            if (domNode) {
+              domNode.addEventListener(
+                "paste",
+                (e: ClipboardEvent) => {
+                  e.preventDefault();
+                },
+                true
+              );
+              // Also block dragging text in from elsewhere - another way
+              // to inject content without "typing" it.
+              domNode.addEventListener(
+                "drop",
+                (e: DragEvent) => {
+                  e.preventDefault();
+                },
+                true
+              );
+            }
           }}
         />
       </div>
