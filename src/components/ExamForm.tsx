@@ -8,6 +8,18 @@ import type { ExamQuestion, ExamCodingQuestion } from "@/lib/db";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+type DisplayOption = { text: string; originalIndex: number };
+type PreparedQuestion = ExamQuestion & { displayOptions: DisplayOption[] };
+
 type Phase = "starting" | "mcq" | "coding" | "submitting" | "result";
 
 type CodingResult = { codingQuestionId: number; score: number; feedback: string };
@@ -30,6 +42,7 @@ export default function ExamForm({
 }) {
   const [phase, setPhase] = useState<Phase>("starting");
   const [attemptId, setAttemptId] = useState<number | null>(null);
+  const [prepared, setPrepared] = useState<PreparedQuestion[] | null>(null);
   const [mcqIndex, setMcqIndex] = useState(0);
   const [mcqSelected, setMcqSelected] = useState<Record<number, number>>({});
   const [codingIndex, setCodingIndex] = useState(0);
@@ -50,6 +63,20 @@ export default function ExamForm({
   useEffect(() => {
     stateRef.current = { mcqSelected, code, phase, attemptId };
   }, [mcqSelected, code, phase, attemptId]);
+
+  // Shuffle questions and their options client-side only, after mount, so
+  // the server-rendered HTML and the first client render match exactly
+  // (avoids hydration mismatches from randomness) - same approach used for
+  // the chapter quizzes. A fresh shuffle happens every attempt.
+  useEffect(() => {
+    const shuffled = shuffleArray(questions).map((q) => ({
+      ...q,
+      displayOptions: shuffleArray(
+        q.options.map((text, originalIndex) => ({ text, originalIndex }))
+      ),
+    }));
+    setPrepared(shuffled);
+  }, [questions]);
 
   // Reserve an attempt the moment the exam actually starts - this counts
   // against the 3-attempt limit even if the tab is closed before finishing,
@@ -270,9 +297,13 @@ export default function ExamForm({
 
   // --- MCQ PHASE ---
   if (phase === "mcq") {
-    const q = questions[mcqIndex];
-    const isLast = mcqIndex === questions.length - 1;
-    const allAnswered = questions.every((q) => mcqSelected[q.id] !== undefined);
+    if (!prepared) {
+      return <p className="text-chalk-dim">Preparing your exam...</p>;
+    }
+
+    const q = prepared[mcqIndex];
+    const isLast = mcqIndex === prepared.length - 1;
+    const allAnswered = prepared.every((q) => mcqSelected[q.id] !== undefined);
 
     return (
       <div
@@ -291,25 +322,29 @@ export default function ExamForm({
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-chalk">Final Exam - Multiple Choice</h1>
           <span className="text-sm text-chalk-dim">
-            Question {mcqIndex + 1} of {questions.length}
+            Question {mcqIndex + 1} of {prepared.length}
           </span>
         </div>
 
         <div className="flex flex-col gap-3">
-          <p className="font-medium text-chalk">{q.question}</p>
+          <p className="whitespace-pre-wrap font-mono text-sm font-medium text-chalk">
+            {q.question}
+          </p>
           <div className="flex flex-col gap-2">
-            {q.options.map((opt, i) => (
+            {q.displayOptions.map((opt, i) => (
               <button
                 key={i}
                 type="button"
-                onClick={() => setMcqSelected((prev) => ({ ...prev, [q.id]: i }))}
+                onClick={() =>
+                  setMcqSelected((prev) => ({ ...prev, [q.id]: opt.originalIndex }))
+                }
                 className={`rounded-lg border px-4 py-2 text-left text-sm transition ${
-                  mcqSelected[q.id] === i
+                  mcqSelected[q.id] === opt.originalIndex
                     ? "border-coral bg-coral/10 text-chalk"
                     : "border-chalk/15 text-chalk-dim hover:border-chalk/30"
                 }`}
               >
-                {opt}
+                {opt.text}
               </button>
             ))}
           </div>
@@ -339,7 +374,7 @@ export default function ExamForm({
           ) : (
             <button
               type="button"
-              onClick={() => setMcqIndex((c) => Math.min(questions.length - 1, c + 1))}
+              onClick={() => setMcqIndex((c) => Math.min(prepared.length - 1, c + 1))}
               disabled={mcqSelected[q.id] === undefined}
               className="flex items-center gap-1 rounded-full bg-coral px-5 py-2 text-sm font-medium text-ink transition hover:brightness-110 disabled:opacity-50"
             >
