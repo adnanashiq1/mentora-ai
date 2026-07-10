@@ -14,10 +14,10 @@ export default async function ExamPage() {
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
         <Link href="/dashboard" className="flex items-center gap-2 text-chalk-dim hover:text-chalk">
           <ArrowLeft size={18} />
-          <span className="text-sm">Dashboard</span>
+          <span className="hidden text-sm sm:inline">Dashboard</span>
         </Link>
         <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
           <LogoMark size={26} /> Final Exam

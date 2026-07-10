@@ -58,14 +58,15 @@ function stripForSpeech(text: string): string {
     .trim();
 }
 
+const GREETING: Message = {
+  role: "assistant",
+  content:
+    "Hey! I'm Mentora. Ask me anything to get started with C#, or just say \"let's begin\" and I'll walk you through the basics.",
+};
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hey! I'm Mentora. Ask me anything to get started with C#, or just say \"let's begin\" and I'll walk you through the basics.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([GREETING]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
@@ -75,6 +76,25 @@ export default function ChatPage() {
   const voiceModeRef = useRef(voiceMode);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const prevLoadingRef = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/history");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(data.messages);
+          }
+        }
+      } catch {
+        // If history fails to load, just fall back to the greeting -
+        // not a reason to block the chat from working.
+      } finally {
+        setHistoryLoaded(true);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -152,13 +172,21 @@ export default function ChatPage() {
     recognition.onerror = () => setListening(false);
 
     recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function stopListening() {
-    recognitionRef.current?.stop();
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // ignore - recognition may already be stopped
+    }
     setListening(false);
   }
 
@@ -183,19 +211,23 @@ export default function ChatPage() {
   }, [loading, voiceMode, messages, speak]);
 
   function toggleVoiceMode() {
-    if (voiceMode) {
-      window.speechSynthesis?.cancel();
-      stopListening();
+    try {
+      if (voiceMode) {
+        window.speechSynthesis?.cancel();
+        stopListening();
+      }
+    } catch {
+      // ignore - worst case voice mode just toggles without cleanup
     }
     setVoiceMode((v) => !v);
   }
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
         <Link href="/dashboard" className="flex items-center gap-2 text-chalk-dim hover:text-chalk">
           <ArrowLeft size={18} />
-          <span className="text-sm">Dashboard</span>
+          <span className="hidden text-sm sm:inline">Dashboard</span>
         </Link>
         <div className="doodle-underline">
           <span className="flex items-center gap-2 font-hand text-2xl font-bold text-chalk">
@@ -207,6 +239,7 @@ export default function ChatPage() {
         </div>
         {speechSupported ? (
           <button
+            type="button"
             onClick={toggleVoiceMode}
             title={voiceMode ? "Turn off voice mode" : "Turn on voice mode"}
             className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
@@ -221,51 +254,56 @@ export default function ChatPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 overflow-y-auto px-6 py-8">
-        {messages.map((m, i) => {
-          const isStreamingEmpty =
-            loading && i === messages.length - 1 && m.role === "assistant" && m.content === "";
+        {!historyLoaded ? (
+          <p className="text-center text-sm text-chalk-dim">Loading your conversation...</p>
+        ) : (
+          messages.map((m, i) => {
+            const isStreamingEmpty =
+              loading && i === messages.length - 1 && m.role === "assistant" && m.content === "";
 
-          if (m.role === "assistant") {
-            const segments = parseSegments(m.content);
+            if (m.role === "assistant") {
+              const segments = parseSegments(m.content);
+              return (
+                <div
+                  key={i}
+                  className="mr-auto max-w-[85%] rounded-2xl rounded-tl-sm border-l-4 border-coral bg-panel px-4 py-3 text-sm leading-relaxed text-chalk shadow-sm -rotate-[0.3deg]"
+                >
+                  {isStreamingEmpty ? (
+                    <ChalkSquiggle />
+                  ) : (
+                    segments.map((seg, si) =>
+                      seg.type === "mermaid" ? (
+                        <div key={si} className="my-2">
+                          <MermaidDiagram definition={seg.content} />
+                        </div>
+                      ) : (
+                        <span key={si} className="whitespace-pre-wrap">
+                          {seg.content}
+                        </span>
+                      )
+                    )
+                  )}
+                </div>
+              );
+            }
+
             return (
               <div
                 key={i}
-                className="mr-auto max-w-[85%] rounded-2xl rounded-tl-sm border-l-4 border-coral bg-panel px-4 py-3 text-sm leading-relaxed text-chalk shadow-sm -rotate-[0.3deg]"
+                className="ml-auto max-w-[80%] rotate-[0.3deg] rounded-2xl rounded-tr-sm bg-mustard px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-ink shadow-sm"
               >
-                {isStreamingEmpty ? (
-                  <ChalkSquiggle />
-                ) : (
-                  segments.map((seg, si) =>
-                    seg.type === "mermaid" ? (
-                      <div key={si} className="my-2">
-                        <MermaidDiagram definition={seg.content} />
-                      </div>
-                    ) : (
-                      <span key={si} className="whitespace-pre-wrap">
-                        {seg.content}
-                      </span>
-                    )
-                  )
-                )}
+                {m.content}
               </div>
             );
-          }
-
-          return (
-            <div
-              key={i}
-              className="ml-auto max-w-[80%] rotate-[0.3deg] rounded-2xl rounded-tr-sm bg-mustard px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-ink shadow-sm"
-            >
-              {m.content}
-            </div>
-          );
-        })}
+          })
+        )}
         <div ref={bottomRef} />
       </main>
 
       {voiceMode && (
         <div className="mx-auto mb-2 flex w-full max-w-2xl items-center justify-center px-6">
           <button
+            type="button"
             onClick={listening ? stopListening : startListening}
             className={`flex items-center gap-2 rounded-full px-6 py-3 text-sm font-medium transition ${
               listening ? "animate-pulse bg-coral text-ink" : "bg-panel text-chalk hover:bg-panel/80"

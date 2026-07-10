@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getProfile } from "@/lib/db";
+import { getProfile, saveChatMessage } from "@/lib/db";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -16,6 +16,13 @@ export async function POST(req: Request) {
   }
 
   const { messages }: { messages: ChatMessage[] } = await req.json();
+
+  // Persist the student's new message. It's always the last item, since the
+  // client sends the full running conversation each turn.
+  const newestUserMessage = messages[messages.length - 1];
+  if (newestUserMessage?.role === "user") {
+    await saveChatMessage(userId, "user", newestUserMessage.content);
+  }
 
   const systemPrompt = `You are Mentora, a friendly, patient AI programming tutor teaching this student C#.
 
@@ -34,7 +41,9 @@ Rules:
 - If they seem confused, re-explain more simply using an even more concrete example from the same domain, don't just repeat yourself.
 - Never invent facts about their interests or background beyond what they told you — ask if you need more detail.`;
 
-  const contents = messages.map((m) => ({
+  // Cap how much history gets sent as context - keeps requests fast and
+  // avoids unbounded growth over a long-running conversation.
+  const contents = messages.slice(-20).map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
   }));
@@ -67,6 +76,7 @@ Rules:
       const decoder = new TextDecoder();
       const encoder = new TextEncoder();
       let buffer = "";
+      let fullText = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -84,11 +94,18 @@ Rules:
           try {
             const parsed = JSON.parse(jsonStr);
             const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) controller.enqueue(encoder.encode(text));
+            if (text) {
+              fullText += text;
+              controller.enqueue(encoder.encode(text));
+            }
           } catch {
             // Ignore malformed SSE lines (e.g. keep-alive pings)
           }
         }
+      }
+
+      if (fullText) {
+        await saveChatMessage(userId, "assistant", fullText);
       }
 
       controller.close();

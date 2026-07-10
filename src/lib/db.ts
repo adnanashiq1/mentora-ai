@@ -412,3 +412,33 @@ export async function getCertificateByCode(code: string): Promise<CertificateLoo
     verificationCode: rows[0].verification_code,
   };
 }
+
+// --- Chat history ---
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
+
+const CHAT_HISTORY_LIMIT = 30; // most recent messages kept per user
+
+export async function getChatHistory(userId: string): Promise<ChatMessage[]> {
+  const rows = await sql`
+    SELECT role, content, created_at FROM (
+      SELECT role, content, created_at FROM chat_messages
+      WHERE user_id = ${userId}
+      ORDER BY created_at DESC
+      LIMIT ${CHAT_HISTORY_LIMIT}
+    ) recent
+    ORDER BY created_at ASC
+  `;
+  return rows.map((r) => ({ role: r.role, content: r.content })) as ChatMessage[];
+}
+
+export async function saveChatMessage(
+  userId: string,
+  role: "user" | "assistant",
+  content: string
+): Promise<void> {
+  await sql`
+    INSERT INTO chat_messages (user_id, role, content)
+    VALUES (${userId}, ${role}, ${content})
+  `;
+}

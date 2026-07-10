@@ -21,13 +21,13 @@ export default async function ChapterQuizPage({
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
         <Link
           href={`/chapters/${slug}`}
           className="flex items-center gap-2 text-chalk-dim hover:text-chalk"
         >
           <ArrowLeft size={18} />
-          <span className="text-sm">Back to chapter</span>
+          <span className="hidden text-sm sm:inline">Back to chapter</span>
         </Link>
         <span className="font-hand text-xl font-bold text-chalk">Quiz time</span>
         <div className="w-[110px]" />

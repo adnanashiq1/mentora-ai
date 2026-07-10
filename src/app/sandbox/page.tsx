@@ -94,14 +94,14 @@ function SandboxInner() {
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-6 py-4">
+      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
         <div className="flex items-center gap-4">
           <Link
             href={backHref}
             className="flex items-center gap-2 text-chalk-dim hover:text-chalk"
           >
             <ArrowLeft size={18} />
-            <span className="text-sm">Back</span>
+            <span className="hidden text-sm sm:inline">Back</span>
           </Link>
           <Link href="/dashboard" className="text-sm text-chalk-dim hover:text-chalk">
             Dashboard
