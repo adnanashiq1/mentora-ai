@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send, RotateCcw } from "lucide-react";
+import { ArrowLeft, Send, RotateCcw, Mic, Volume2, VolumeX } from "lucide-react";
 import LogoMark from "@/components/LogoMark";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -10,6 +10,13 @@ type Message = { role: "user" | "assistant"; content: string };
 const STARTER: Message[] = [
   { role: "user", content: "I'm ready to start the mock interview." },
 ];
+
+function stripForSpeech(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, "There's a code example on screen for this.")
+    .replace(/[`*_#]/g, "")
+    .trim();
+}
 
 function ChalkSquiggle() {
   return (
@@ -32,11 +39,33 @@ export default function InterviewPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [started, setStarted] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const voiceModeRef = useRef(voiceMode);
+  const messagesRef = useRef<Message[]>(messages);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const prevLoadingRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    voiceModeRef.current = voiceMode;
+  }, [voiceMode]);
+
+  useEffect(() => {
+    const hasSpeechRecognition =
+      typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    const hasSpeechSynthesis = typeof window !== "undefined" && "speechSynthesis" in window;
+    setSpeechSupported(hasSpeechRecognition && hasSpeechSynthesis);
+  }, []);
 
   // apiMessages: full context sent to the model.
   // displayBase: what's already shown, before the new assistant reply streams in.
@@ -82,9 +111,77 @@ export default function InterviewPage() {
   }
 
   function startNewInterview() {
+    window.speechSynthesis?.cancel();
+    recognitionRef.current?.stop();
     setMessages([]);
     setStarted(false);
     setInput("");
+  }
+
+  const startListening = useCallback(() => {
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      const newMessages = [...messagesRef.current, { role: "user" as const, content: transcript }];
+      runExchange(newMessages, newMessages);
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function stopListening() {
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // ignore
+    }
+    setListening(false);
+  }
+
+  const speak = useCallback((text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(stripForSpeech(text));
+    utterance.onend = () => {
+      if (voiceModeRef.current) startListening();
+    };
+    window.speechSynthesis.speak(utterance);
+  }, [startListening]);
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading && voiceMode) {
+      const last = messages[messages.length - 1];
+      if (last?.role === "assistant" && last.content) speak(last.content);
+    }
+    prevLoadingRef.current = loading;
+  }, [loading, voiceMode, messages, speak]);
+
+  function toggleVoiceMode() {
+    try {
+      if (voiceMode) {
+        window.speechSynthesis?.cancel();
+        stopListening();
+      }
+    } catch {
+      // ignore
+    }
+    setVoiceMode((v) => !v);
   }
 
   async function sendMessage(e: React.FormEvent) {
@@ -105,18 +202,32 @@ export default function InterviewPage() {
         <span className="flex items-center gap-2 font-hand text-xl font-bold text-chalk sm:text-2xl">
           <LogoMark size={26} /> Interview Prep
         </span>
-        {started ? (
-          <button
-            type="button"
-            onClick={startNewInterview}
-            title="Start a new interview"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-chalk/20 text-chalk-dim hover:text-chalk"
-          >
-            <RotateCcw size={16} />
-          </button>
-        ) : (
-          <div className="w-9" />
-        )}
+        <div className="flex items-center gap-2">
+          {started && speechSupported && (
+            <button
+              type="button"
+              onClick={toggleVoiceMode}
+              title={voiceMode ? "Turn off voice mode" : "Turn on voice mode"}
+              className={`flex h-9 w-9 items-center justify-center rounded-full transition ${
+                voiceMode ? "bg-coral text-ink" : "border border-chalk/20 text-chalk-dim hover:text-chalk"
+              }`}
+            >
+              {voiceMode ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            </button>
+          )}
+          {started ? (
+            <button
+              type="button"
+              onClick={startNewInterview}
+              title="Start a new interview"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-chalk/20 text-chalk-dim hover:text-chalk"
+            >
+              <RotateCcw size={16} />
+            </button>
+          ) : (
+            <div className="w-9" />
+          )}
+        </div>
       </header>
 
       {!started ? (
@@ -125,7 +236,8 @@ export default function InterviewPage() {
           <p className="text-sm text-chalk-dim">
             Mentora will switch out of tutor mode and interview you like a real hiring manager
             would - one question at a time, honest feedback, and a real assessment at the end.
-            No analogies, no hand-holding.
+            No analogies, no hand-holding. Turn on voice mode once it starts if you'd rather
+            speak your answers out loud, closer to a real interview.
           </p>
           <button
             type="button"
@@ -156,6 +268,21 @@ export default function InterviewPage() {
             })}
             <div ref={bottomRef} />
           </main>
+
+          {voiceMode && (
+            <div className="mx-auto mb-2 flex w-full max-w-2xl items-center justify-center px-6">
+              <button
+                type="button"
+                onClick={listening ? stopListening : startListening}
+                className={`flex items-center gap-2 rounded-full px-6 py-3 text-sm font-medium transition ${
+                  listening ? "animate-pulse bg-coral text-ink" : "bg-panel text-chalk hover:bg-panel/80"
+                }`}
+              >
+                <Mic size={18} />
+                {listening ? "Listening... tap to stop" : "Tap to answer"}
+              </button>
+            </div>
+          )}
 
           <form onSubmit={sendMessage} className="mx-auto flex w-full max-w-2xl items-center gap-2 px-6 pb-8">
             <input
