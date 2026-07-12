@@ -13,7 +13,7 @@ export default async function ChaptersPage() {
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-chalk/10 bg-ink px-4 py-4 sm:px-6">
         <Link href="/dashboard" className="flex items-center gap-2 text-chalk-dim hover:text-chalk">
           <ArrowLeft size={18} />
           <span className="hidden text-sm sm:inline">Dashboard</span>

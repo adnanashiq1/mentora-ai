@@ -442,3 +442,202 @@ export async function saveChatMessage(
     VALUES (${userId}, ${role}, ${content})
   `;
 }
+
+// --- Streaks & Badges ---
+// Both are computed on the fly from existing activity data (quiz attempts
+// and chat messages) rather than tracked in a separate table - always
+// accurate, no extra bookkeeping to keep in sync.
+
+function parseDateOnly(dateStr: string): number {
+  // Postgres DATE columns come back as "YYYY-MM-DD" strings. Parsing with
+  // Date.UTC keeps day-boundary math consistent regardless of server
+  // timezone, avoiding off-by-one bugs from local-time parsing.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
+export type StreakInfo = { current: number; longest: number };
+
+export async function getUserStreak(userId: string): Promise<StreakInfo> {
+  const rows = await sql`
+    SELECT DISTINCT activity_date::text AS activity_date FROM (
+      SELECT DATE(attempted_at) AS activity_date FROM quiz_results WHERE user_id = ${userId}
+      UNION
+      SELECT DATE(created_at) AS activity_date FROM chat_messages WHERE user_id = ${userId} AND role = 'user'
+    ) combined
+    ORDER BY activity_date DESC
+  `;
+
+  if (rows.length === 0) return { current: 0, longest: 0 };
+
+  const oneDay = 24 * 60 * 60 * 1000;
+  const dayTimestamps = rows.map((r) => parseDateOnly(r.activity_date as string));
+  const daySet = new Set(dayTimestamps);
+
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+
+  // Current streak: only counts if the most recent activity was today or
+  // yesterday (a grace day, so the streak doesn't vanish before someone's
+  // had a chance to do today's activity yet).
+  let current = 0;
+  const mostRecent = dayTimestamps[0];
+  if (mostRecent === todayUTC || mostRecent === todayUTC - oneDay) {
+    let cursor = mostRecent;
+    while (daySet.has(cursor)) {
+      current++;
+      cursor -= oneDay;
+    }
+  }
+
+  // Longest streak ever, walking the sorted days in ascending order.
+  const sortedAsc = [...dayTimestamps].sort((a, b) => a - b);
+  let longest = 0;
+  let run = 0;
+  let prev: number | null = null;
+  for (const day of sortedAsc) {
+    run = prev !== null && day - prev === oneDay ? run + 1 : 1;
+    longest = Math.max(longest, run);
+    prev = day;
+  }
+
+  return { current, longest };
+}
+
+export type Badge = {
+  id: string;
+  name: string;
+  description: string;
+  earned: boolean;
+};
+
+export async function getUserBadges(userId: string): Promise<Badge[]> {
+  const progress = await getUserProgress(userId);
+  const attempted = progress.filter((p) => p.best_score !== null);
+  const perfect = progress.some(
+    (p) => p.best_score !== null && p.best_total !== null && p.best_score === p.best_total
+  );
+
+  const examStatus = await getExamStatus(userId);
+  const passedExam = "bestPassedAttempt" in examStatus && !!examStatus.bestPassedAttempt;
+
+  const streak = await getUserStreak(userId);
+
+  const chatRows = await sql`
+    SELECT COUNT(*)::int AS count FROM chat_messages WHERE user_id = ${userId} AND role = 'user'
+  `;
+  const chatCount = (chatRows[0]?.count as number) ?? 0;
+
+  return [
+    {
+      id: "first-steps",
+      name: "First Steps",
+      description: "Complete your first chapter quiz",
+      earned: attempted.length >= 1,
+    },
+    {
+      id: "halfway",
+      name: "Halfway There",
+      description: "Complete 13 of 26 chapters",
+      earned: attempted.length >= 13,
+    },
+    {
+      id: "course-complete",
+      name: "Course Complete",
+      description: "Complete all 26 chapters",
+      earned: attempted.length >= 26,
+    },
+    {
+      id: "perfectionist",
+      name: "Perfectionist",
+      description: "Score 100% on any chapter quiz",
+      earned: perfect,
+    },
+    {
+      id: "certified",
+      name: "Certified",
+      description: "Pass the final exam",
+      earned: passedExam,
+    },
+    {
+      id: "on-a-roll",
+      name: "On a Roll",
+      description: "Reach a 3-day learning streak",
+      earned: streak.current >= 3 || streak.longest >= 3,
+    },
+    {
+      id: "dedicated",
+      name: "Dedicated",
+      description: "Reach a 7-day learning streak",
+      earned: streak.current >= 7 || streak.longest >= 7,
+    },
+    {
+      id: "chatterbox",
+      name: "Chatterbox",
+      description: "Send 20 messages to Mentora",
+      earned: chatCount >= 20,
+    },
+  ];
+}
+
+// --- Guided Projects ---
+
+export type Project = {
+  id: number;
+  slug: string;
+  title: string;
+  order_num: number;
+  difficulty: string;
+  description: string;
+  requirements: string[];
+  starter_code: string;
+};
+
+export async function getProjects(): Promise<Project[]> {
+  const rows = await sql`
+    SELECT * FROM projects ORDER BY order_num ASC
+  `;
+  return rows as Project[];
+}
+
+export async function getProjectBySlug(slug: string): Promise<Project | null> {
+  const rows = await sql`
+    SELECT * FROM projects WHERE slug = ${slug} LIMIT 1
+  `;
+  return (rows[0] as Project) ?? null;
+}
+
+export type ProjectSubmission = {
+  id: number;
+  user_id: string;
+  project_slug: string;
+  code: string;
+  meets_requirements: boolean;
+  feedback: string;
+  submitted_at: string;
+};
+
+export async function getProjectSubmissions(
+  userId: string,
+  projectSlug: string
+): Promise<ProjectSubmission[]> {
+  const rows = await sql`
+    SELECT * FROM project_submissions
+    WHERE user_id = ${userId} AND project_slug = ${projectSlug}
+    ORDER BY submitted_at DESC
+  `;
+  return rows as ProjectSubmission[];
+}
+
+export async function saveProjectSubmission(params: {
+  userId: string;
+  projectSlug: string;
+  code: string;
+  meetsRequirements: boolean;
+  feedback: string;
+}): Promise<void> {
+  await sql`
+    INSERT INTO project_submissions (user_id, project_slug, code, meets_requirements, feedback)
+    VALUES (${params.userId}, ${params.projectSlug}, ${params.code}, ${params.meetsRequirements}, ${params.feedback})
+  `;
+}

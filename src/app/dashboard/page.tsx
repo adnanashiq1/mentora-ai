@@ -1,10 +1,10 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
-import { getProfile } from "@/lib/db";
+import { getProfile, getUserStreak } from "@/lib/db";
 import Link from "next/link";
 import LogoMark from "@/components/LogoMark";
-import { BookOpen, TrendingUp, Trophy, Terminal, Award } from "lucide-react";
+import { BookOpen, TrendingUp, Trophy, Terminal, Award, Flame, Sparkles, Briefcase } from "lucide-react";
 
 export default async function DashboardPage() {
   const user = await currentUser();
@@ -19,21 +19,36 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
+  const streak = await getUserStreak(user.id);
+
   const cards = [
     { href: "/chapters", label: "Your Course", icon: BookOpen },
     { href: "/progress", label: "My Progress", icon: TrendingUp },
     { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+    { href: "/achievements", label: "Achievements", icon: Sparkles },
+    { href: "/projects", label: "Guided Projects", icon: Briefcase },
     { href: "/sandbox", label: "Code Sandbox", icon: Terminal },
     { href: "/exam", label: "Final Exam", icon: Award },
   ];
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-chalk/10 bg-ink px-4 py-4 sm:px-6">
         <span className="flex items-center gap-2 font-hand text-xl font-bold text-chalk sm:text-2xl">
           <LogoMark size={26} /> Mentora AI
         </span>
-        <UserButton />
+        <div className="flex items-center gap-3">
+          {streak.current > 0 && (
+            <Link
+              href="/achievements"
+              className="flex items-center gap-1 rounded-full border border-coral/30 bg-coral/10 px-3 py-1 text-sm text-coral"
+              title={`${streak.current}-day streak`}
+            >
+              <Flame size={14} /> {streak.current}
+            </Link>
+          )}
+          <UserButton />
+        </div>
       </header>
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-6 px-4 py-10 text-center sm:px-6">
         <div>

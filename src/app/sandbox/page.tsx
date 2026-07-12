@@ -94,7 +94,7 @@ function SandboxInner() {
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">
-      <header className="flex items-center justify-between border-b border-chalk/10 px-4 py-4 sm:px-6">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-chalk/10 bg-ink px-4 py-4 sm:px-6">
         <div className="flex items-center gap-4">
           <Link
             href={backHref}
