@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getProfile, getUserStreak } from "@/lib/db";
 import Link from "next/link";
 import LogoMark from "@/components/LogoMark";
-import { BookOpen, TrendingUp, Trophy, Terminal, Award, Flame, Sparkles, Briefcase } from "lucide-react";
+import { BookOpen, TrendingUp, Trophy, Terminal, Award, Flame, Sparkles, Briefcase, Mic2, ShieldCheck } from "lucide-react";
 
 export default async function DashboardPage() {
   const user = await currentUser();
@@ -27,9 +27,18 @@ export default async function DashboardPage() {
     { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
     { href: "/achievements", label: "Achievements", icon: Sparkles },
     { href: "/projects", label: "Guided Projects", icon: Briefcase },
+    { href: "/interview", label: "Interview Prep", icon: Mic2 },
     { href: "/sandbox", label: "Code Sandbox", icon: Terminal },
     { href: "/exam", label: "Final Exam", icon: Award },
   ];
+
+  const isAdmin =
+    !!process.env.ADMIN_EMAIL &&
+    user.emailAddresses.some((e) => e.emailAddress === process.env.ADMIN_EMAIL);
+
+  if (isAdmin) {
+    cards.push({ href: "/admin", label: "Admin", icon: ShieldCheck });
+  }
 
   return (
     <div className="notebook-bg flex min-h-screen flex-col">

@@ -641,3 +641,59 @@ export async function saveProjectSubmission(params: {
     VALUES (${params.userId}, ${params.projectSlug}, ${params.code}, ${params.meetsRequirements}, ${params.feedback})
   `;
 }
+
+// --- Admin stats ---
+
+export type AdminStats = {
+  totalStudents: number;
+  totalQuizAttempts: number;
+  totalChatMessages: number;
+  examAttemptsTotal: number;
+  examAttemptsPassed: number;
+  projectSubmissionsTotal: number;
+  projectSubmissionsMet: number;
+  chapterCompletion: { title: string; order_num: number; completedCount: number }[];
+  topLeaderboard: LeaderboardEntry[];
+};
+
+export async function getAdminStats(): Promise<AdminStats> {
+  const [
+    studentsRows,
+    quizAttemptsRows,
+    chatMessagesRows,
+    examRows,
+    projectRows,
+    chapterRows,
+    topLeaderboard,
+  ] = await Promise.all([
+    sql`SELECT COUNT(*)::int AS count FROM profiles`,
+    sql`SELECT COUNT(*)::int AS count FROM quiz_results`,
+    sql`SELECT COUNT(*)::int AS count FROM chat_messages WHERE role = 'user'`,
+    sql`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE passed) ::int AS passed FROM exam_attempts WHERE status = 'completed'`,
+    sql`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE meets_requirements) ::int AS met FROM project_submissions`,
+    sql`
+      SELECT c.title, c.order_num, COUNT(DISTINCT r.user_id)::int AS completed_count
+      FROM chapters c
+      LEFT JOIN quiz_results r ON r.chapter_slug = c.slug
+      GROUP BY c.title, c.order_num
+      ORDER BY c.order_num ASC
+    `,
+    getLeaderboard(10),
+  ]);
+
+  return {
+    totalStudents: studentsRows[0]?.count ?? 0,
+    totalQuizAttempts: quizAttemptsRows[0]?.count ?? 0,
+    totalChatMessages: chatMessagesRows[0]?.count ?? 0,
+    examAttemptsTotal: examRows[0]?.total ?? 0,
+    examAttemptsPassed: examRows[0]?.passed ?? 0,
+    projectSubmissionsTotal: projectRows[0]?.total ?? 0,
+    projectSubmissionsMet: projectRows[0]?.met ?? 0,
+    chapterCompletion: chapterRows.map((r) => ({
+      title: r.title as string,
+      order_num: r.order_num as number,
+      completedCount: r.completed_count as number,
+    })),
+    topLeaderboard,
+  };
+}
