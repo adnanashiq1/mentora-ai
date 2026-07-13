@@ -89,6 +89,15 @@ export default function Home() {
             </div>
           ))}
         </div>
+
+        <footer className="mt-10 flex gap-4 text-xs text-chalk-dim">
+          <Link href="/terms" className="hover:text-chalk">
+            Terms of Service
+          </Link>
+          <Link href="/privacy" className="hover:text-chalk">
+            Privacy Policy
+          </Link>
+        </footer>
       </main>
     </div>
   );

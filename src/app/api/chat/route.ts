@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getProfile, saveChatMessage } from "@/lib/db";
+import { getProfile, saveChatMessage, checkRateLimit } from "@/lib/db";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -8,6 +8,14 @@ export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
+  const allowed = await checkRateLimit(userId, "chat", 30, 10);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "You're sending messages a bit fast - please wait a few minutes and try again." },
+      { status: 429 }
+    );
   }
 
   const profile = await getProfile(userId);

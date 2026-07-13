@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getProjectBySlug, saveProjectSubmission } from "@/lib/db";
+import { getProjectBySlug, saveProjectSubmission, checkRateLimit } from "@/lib/db";
 
 async function runCode(code: string): Promise<{ stdout: string; stderr: string; compileOutput: string }> {
   const res = await fetch(
@@ -87,6 +87,14 @@ export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
+  const allowed = await checkRateLimit(userId, "project-submit", 10, 10);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "You're submitting a bit fast - please wait a few minutes and try again." },
+      { status: 429 }
+    );
   }
 
   const { projectSlug, code }: { projectSlug: string; code: string } = await req.json();

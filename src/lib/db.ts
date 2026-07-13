@@ -697,3 +697,50 @@ export async function getAdminStats(): Promise<AdminStats> {
     topLeaderboard,
   };
 }
+
+// --- Rate limiting ---
+// DB-backed since Vercel serverless functions are stateless between
+// invocations - an in-memory counter wouldn't reliably persist across
+// requests the way it would on a traditional always-running server.
+
+export async function checkRateLimit(
+  userId: string,
+  action: string,
+  maxPerWindow: number,
+  windowMinutes: number
+): Promise<boolean> {
+  const now = new Date();
+  const rows = await sql`
+    SELECT window_start, count FROM rate_limits WHERE user_id = ${userId} AND action = ${action}
+  `;
+  const row = rows[0];
+
+  if (!row) {
+    await sql`
+      INSERT INTO rate_limits (user_id, action, window_start, count)
+      VALUES (${userId}, ${action}, ${now.toISOString()}, 1)
+      ON CONFLICT (user_id, action) DO UPDATE SET window_start = ${now.toISOString()}, count = 1
+    `;
+    return true;
+  }
+
+  const windowStart = new Date(row.window_start as string);
+  const elapsedMinutes = (now.getTime() - windowStart.getTime()) / 60000;
+
+  if (elapsedMinutes > windowMinutes) {
+    await sql`
+      UPDATE rate_limits SET window_start = ${now.toISOString()}, count = 1
+      WHERE user_id = ${userId} AND action = ${action}
+    `;
+    return true;
+  }
+
+  if ((row.count as number) >= maxPerWindow) {
+    return false;
+  }
+
+  await sql`
+    UPDATE rate_limits SET count = count + 1 WHERE user_id = ${userId} AND action = ${action}
+  `;
+  return true;
+}

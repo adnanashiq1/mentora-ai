@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/db";
 
 // C# (Mono 6.6.0.161) on Judge0 CE's public instance.
 const CSHARP_LANGUAGE_ID = 51;
@@ -18,6 +19,14 @@ export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+
+  const allowed = await checkRateLimit(userId, "run-code", 20, 10);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "You're running code a bit fast - please wait a few minutes and try again." },
+      { status: 429 }
+    );
   }
 
   const { code, stdin }: { code: string; stdin?: string } = await req.json();
