@@ -1,10 +1,10 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { UserButton } from "@clerk/nextjs";
 import { redirect } from "next/navigation";
-import { getProfile, getUserStreak } from "@/lib/db";
+import { getProfile, getUserStreak, getMonetizationEnabled } from "@/lib/db";
 import Link from "next/link";
 import LogoMark from "@/components/LogoMark";
-import { BookOpen, TrendingUp, Trophy, Terminal, Award, Flame, Sparkles, Briefcase, Mic2, ShieldCheck } from "lucide-react";
+import { BookOpen, TrendingUp, Trophy, Terminal, Award, Flame, Sparkles, Briefcase, Mic2, ShieldCheck, CreditCard } from "lucide-react";
 
 export default async function DashboardPage() {
   const user = await currentUser();
@@ -38,6 +38,11 @@ export default async function DashboardPage() {
 
   if (isAdmin) {
     cards.push({ href: "/admin", label: "Admin", icon: ShieldCheck });
+  }
+
+  const monetizationEnabled = await getMonetizationEnabled();
+  if (monetizationEnabled) {
+    cards.push({ href: "/pricing", label: "Pricing", icon: CreditCard });
   }
 
   return (

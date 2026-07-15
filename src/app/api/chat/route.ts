@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { getProfile, saveChatMessage, checkRateLimit } from "@/lib/db";
+import { getProfile, saveChatMessage, checkRateLimit, getMonetizationEnabled, isUserPro } from "@/lib/db";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -10,10 +10,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
-  const allowed = await checkRateLimit(userId, "chat", 30, 10);
+  // Free tier limit stays the same either way. Pro users get a much higher
+  // limit, but only once monetization is actually turned on - while it's
+  // off, everyone gets the same generous free-tier limit, full stop.
+  const monetizationEnabled = await getMonetizationEnabled();
+  const isPro = monetizationEnabled && (await isUserPro(userId));
+  const chatLimit = isPro ? 150 : 30;
+
+  const allowed = await checkRateLimit(userId, "chat", chatLimit, 10);
   if (!allowed) {
     return NextResponse.json(
-      { error: "You're sending messages a bit fast - please wait a few minutes and try again." },
+      {
+        error: isPro
+          ? "You're sending messages a bit fast - please wait a few minutes and try again."
+          : "You've hit the free plan's chat limit for now - please wait a few minutes, or upgrade to Pro for a much higher limit.",
+      },
       { status: 429 }
     );
   }

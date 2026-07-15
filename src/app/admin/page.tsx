@@ -1,9 +1,10 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getAdminStats } from "@/lib/db";
+import { getAdminStats, getMonetizationEnabled, getProSubscriberCount } from "@/lib/db";
 import Link from "next/link";
 import { ArrowLeft, Trophy } from "lucide-react";
 import LogoMark from "@/components/LogoMark";
+import MonetizationToggle from "@/components/MonetizationToggle";
 
 export default async function AdminPage() {
   const user = await currentUser();
@@ -18,6 +19,8 @@ export default async function AdminPage() {
   }
 
   const stats = await getAdminStats();
+  const monetizationEnabled = await getMonetizationEnabled();
+  const proSubscribers = await getProSubscriberCount();
 
   const cards = [
     { label: "Students onboarded", value: stats.totalStudents },
@@ -31,6 +34,7 @@ export default async function AdminPage() {
       label: "Project submissions (met requirements)",
       value: `${stats.projectSubmissionsMet} / ${stats.projectSubmissionsTotal}`,
     },
+    { label: "Pro subscribers", value: proSubscribers },
   ];
 
   return (
@@ -47,6 +51,8 @@ export default async function AdminPage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-10 sm:px-6">
+        <MonetizationToggle initialEnabled={monetizationEnabled} />
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {cards.map((c) => (
             <div key={c.label} className="rounded-xl border border-chalk/10 bg-panel px-5 py-4">

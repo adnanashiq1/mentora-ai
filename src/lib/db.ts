@@ -744,3 +744,64 @@ export async function checkRateLimit(
   `;
   return true;
 }
+
+// --- Monetization ---
+// Everything here is off by default. Nothing in the app shows pricing,
+// upgrade prompts, or Pro-only behavior unless an admin explicitly flips
+// this on from /admin - deliberately, so the product starts fully free.
+
+export async function getMonetizationEnabled(): Promise<boolean> {
+  const rows = await sql`SELECT monetization_enabled FROM app_settings WHERE id = 1`;
+  return !!rows[0]?.monetization_enabled;
+}
+
+export async function setMonetizationEnabled(enabled: boolean): Promise<void> {
+  await sql`
+    INSERT INTO app_settings (id, monetization_enabled) VALUES (1, ${enabled})
+    ON CONFLICT (id) DO UPDATE SET monetization_enabled = ${enabled}
+  `;
+}
+
+export type SubscriptionStatus = "free" | "active" | "canceled" | "past_due";
+
+export async function getUserSubscriptionStatus(userId: string): Promise<SubscriptionStatus> {
+  const rows = await sql`SELECT status FROM subscriptions WHERE user_id = ${userId}`;
+  return (rows[0]?.status as SubscriptionStatus) ?? "free";
+}
+
+export async function isUserPro(userId: string): Promise<boolean> {
+  const status = await getUserSubscriptionStatus(userId);
+  return status === "active";
+}
+
+export async function upsertSubscription(params: {
+  userId: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  status: SubscriptionStatus;
+}): Promise<void> {
+  await sql`
+    INSERT INTO subscriptions (user_id, stripe_customer_id, stripe_subscription_id, status, updated_at)
+    VALUES (${params.userId}, ${params.stripeCustomerId ?? null}, ${params.stripeSubscriptionId ?? null}, ${params.status}, now())
+    ON CONFLICT (user_id) DO UPDATE SET
+      stripe_customer_id = COALESCE(${params.stripeCustomerId ?? null}, subscriptions.stripe_customer_id),
+      stripe_subscription_id = COALESCE(${params.stripeSubscriptionId ?? null}, subscriptions.stripe_subscription_id),
+      status = ${params.status},
+      updated_at = now()
+  `;
+}
+
+export async function getSubscriptionByStripeCustomerId(stripeCustomerId: string) {
+  const rows = await sql`SELECT * FROM subscriptions WHERE stripe_customer_id = ${stripeCustomerId}`;
+  return rows[0] ?? null;
+}
+
+export async function getStripeCustomerIdForUser(userId: string): Promise<string | null> {
+  const rows = await sql`SELECT stripe_customer_id FROM subscriptions WHERE user_id = ${userId}`;
+  return (rows[0]?.stripe_customer_id as string) ?? null;
+}
+
+export async function getProSubscriberCount(): Promise<number> {
+  const rows = await sql`SELECT COUNT(*)::int AS count FROM subscriptions WHERE status = 'active'`;
+  return (rows[0]?.count as number) ?? 0;
+}
